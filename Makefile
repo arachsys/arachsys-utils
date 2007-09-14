@@ -8,14 +8,18 @@ DESTDIR =
 
 SCRIPTS = fixscriptpaths where which
 
+all: really send-arp ${SCRIPTS}
+
 really: really.c
 
-install: really ${SCRIPTS}
+send-arp: send-arp.c
+
+install: really send-arp ${SCRIPTS}
 	mkdir -p ${DESTDIR}${BINDIR}
 	install -m 4754 -o root -g staff -s really ${DESTDIR}${BINDIR}
-	install -m 0755 ${SCRIPTS} ${DESTDIR}${BINDIR}
+	install -m 0755 send-arp ${SCRIPTS} ${DESTDIR}${BINDIR}
 
 clean:
-	rm -f *.o really
+	rm -f *.o really send-arp
 
 .PHONY: install clean
