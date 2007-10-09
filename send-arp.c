@@ -1,6 +1,9 @@
 #include <arpa/inet.h>
+#include <netpacket/packet.h>
 #include <net/ethernet.h>
+#include <net/if.h>
 #include <net/if_arp.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <ctype.h>
@@ -50,7 +53,8 @@ void atohw(const char *s, u_int8_t *h) {
 
 int main(int argc, char **argv) {
   int s;
-  struct sockaddr sa;
+  struct ifreq ifr;
+  struct sockaddr_ll sa;
   struct {
     struct ether_header eh;
     struct arphdr ah;
@@ -91,11 +95,18 @@ gratuitous arp broadcast.\n\
   p.ah.ar_op = htons(ARPOP_REPLY);
   memset(&p.padding, 0, sizeof(p.padding));
 
-  s = socket(PF_INET, SOCK_PACKET, htons(ETH_P_RARP));
+  s = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_RARP));
   if (s < 0)
     error(1, errno, "socket");
-  strncpy(sa.sa_data, argv[1], sizeof(sa.sa_data));
-  if (sendto(s, &p, sizeof(p), 0, &sa, sizeof(sa)) < 0)
+
+  strncpy (ifr.ifr_name, argv[1], IFNAMSIZ);
+  if (ioctl(s, SIOCGIFINDEX, &ifr) < 0)
+    error(1, errno, "ioctl SIOCGIFINDEX");
+
+  sa.sll_family = AF_PACKET;
+  sa.sll_ifindex = ifr.ifr_ifindex;
+  sa.sll_halen = ETH_ALEN;
+  if (sendto(s, &p, sizeof(p), 0, (struct sockaddr *) &sa, sizeof(sa)) < 0)
     error(1, errno, "sendto");
   exit(0);
 }
