@@ -1,20 +1,20 @@
 #!/bin/sh -e
 
-for i in $(find "$@" -type f); do
-  if head -c2 $i | grep -q '#!'; then
-    if head -n1 $i | grep -q '^#!\( *//*usr/\| *//\| \)'; then
-      echo "Fixing $i:"
-      echo -n "-" && head -n1 $i
+find "$@" -type f -print0 | while read -r -d "`echo -e '\0'`" file; do
+  if head -c2 "$file" | grep -q '#!'; then
+    if head -n1 "$file" | grep -q '^#!\( *//*usr/\| *//\| \)'; then
+      echo "Fixing $file:"
+      echo -n "-" && head -n1 "$file"
       sed -i -e '1s.^\(#! *\)//*usr//*local//*.\1/.' \
              -e '1s.^\(#! *\)//*usr//*.\1/.' -e '1s.^\(#! *\)///*.\1/.' \
-             -e '1s.^\(#!\)  *.\1.' $i
-      echo -n "+" && head -n1 $i && echo
+             -e '1s.^\(#!\)  *.\1.' "$file"
+      echo -n "+" && head -n1 "$file" && echo
     fi
-    if head -n1 $i | grep -q '^#!/bin/env '; then
-      echo "#!/bin/env used in $i:"
-      echo -n "-" && head -n1 $i
-      sed -i -e '1s.^\(#!/bin/\)env  *\([^ =][^ =]*\)\( \|$\).\1\2\3.' $i
-      echo -n "+" && head -n1 $i && echo
+    if head -n1 "$file" | grep -q '^#!/bin/env '; then
+      echo "#!/bin/env used in $file:"
+      echo -n "-" && head -n1 "$file"
+      sed -i -e '1s.^\(#!/bin/\)env  *\([^ =][^ =]*\)\( \|$\).\1\2\3.' "$file"
+      echo -n "+" && head -n1 "$file" && echo
     fi
   fi
 done
