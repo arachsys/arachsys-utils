@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 void atoip(const char *s, struct in_addr *i) {
   struct hostent *h;
@@ -51,8 +52,21 @@ void atohw(const char *s, u_int8_t *h) {
   }
 }
 
+void usage(char *progname) {
+  fprintf(stderr, "\
+Usage: %s [OPTIONS] INTERFACE SENDER-IP SENDER-HW [TARGET-IP TARGET-HW]\n\
+Options:\n\
+  -i N  send arp broadcast every N milliseconds\n\
+\n\
+TARGET-IP and TARGET HW default to SENDER-IP and ff:ff:ff:ff:ff:ff for\n\
+gratuitous arp broadcast.\n\
+", progname);
+  exit(1);
+}
+
 int main(int argc, char **argv) {
-  int s;
+  int i = 0, opt, s;
+  char *progname = argv[0];
   struct ifreq ifr;
   struct sockaddr_ll sa;
   struct {
@@ -65,24 +79,32 @@ int main(int argc, char **argv) {
     u_int8_t padding[18];
   } p;
 
-  if (argc != 4 && argc != 6) {
-    fprintf(stderr, "\
-Usage: %s INTERFACE SENDER-IP SENDER-HW [TARGET-IP TARGET-HW]\n\
-TARGET-IP and TARGET HW default to SENDER-IP and ff:ff:ff:ff:ff:ff for\n\
-gratuitous arp broadcast.\n\
-", argv[0]);
-    exit(1);
-  }
+  while ((opt = getopt(argc, argv, "i:")) > 0)
+    switch (opt) {
+      case 'i':
+        i = atoi(optarg);
+        if (i == 0)
+          error(1, 0, "-i takes a positive integer argument");
+        i *= 1000;
+        break;
+      default:
+        usage(progname);
+    }
+  argc -= optind;
+  argv += optind;
 
-  atoip(argv[2], &p.ar_sip);
-  atohw(argv[3], p.eh.ether_shost);
-  atohw(argv[3], p.ar_sha);
-  if (argc > 5) {
-    atoip(argv[4], &p.ar_tip);
-    atohw(argv[5], p.eh.ether_dhost);
-    atohw(argv[5], p.ar_tha);
+  if (argc != 3 && argc != 5)
+    usage(progname);
+
+  atoip(argv[1], &p.ar_sip);
+  atohw(argv[2], p.eh.ether_shost);
+  atohw(argv[2], p.ar_sha);
+  if (argc > 4) {
+    atoip(argv[3], &p.ar_tip);
+    atohw(argv[3], p.eh.ether_dhost);
+    atohw(argv[4], p.ar_tha);
   } else {
-    atoip(argv[2], &p.ar_tip);
+    atoip(argv[1], &p.ar_tip);
     atohw("ff:ff:ff:ff:ff:ff", p.eh.ether_dhost);
     atohw("ff:ff:ff:ff:ff:ff", p.ar_tha);
   }
@@ -99,14 +121,19 @@ gratuitous arp broadcast.\n\
   if (s < 0)
     error(1, errno, "socket");
 
-  strncpy (ifr.ifr_name, argv[1], IFNAMSIZ);
+  strncpy (ifr.ifr_name, argv[0], IFNAMSIZ);
   if (ioctl(s, SIOCGIFINDEX, &ifr) < 0)
     error(1, errno, "ioctl SIOCGIFINDEX");
 
   sa.sll_family = AF_PACKET;
   sa.sll_ifindex = ifr.ifr_ifindex;
   sa.sll_halen = ETH_ALEN;
-  if (sendto(s, &p, sizeof(p), 0, (struct sockaddr *) &sa, sizeof(sa)) < 0)
-    error(1, errno, "sendto");
-  exit(0);
+
+  while (1) {
+    if (sendto(s, &p, sizeof(p), 0, (struct sockaddr *) &sa, sizeof(sa)) < 0)
+      error(1, errno, "sendto");
+    if (i == 0)
+      exit(0);
+    usleep(i);
+  }
 }
