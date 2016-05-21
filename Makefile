@@ -1,25 +1,26 @@
-CC = gcc
-CFLAGS = -Os -Wall
-LDFLAGS =
-
 PREFIX =
 BINDIR = ${PREFIX}/bin
 DESTDIR =
 
+CC = gcc
+CFLAGS = -Os -Wall -Wextra
+
+BINARIES = nosetuid
 SCRIPTS = fixscriptpaths where which
+SUIDROOT = really
 
-all: really send-arp ${SCRIPTS}
-
-really: really.c
-
-send-arp: send-arp.c
-
-install: really send-arp ${SCRIPTS}
-	mkdir -p ${DESTDIR}${BINDIR}
-	install -m 4754 -o root -g staff -s really ${DESTDIR}${BINDIR}
-	install -m 0755 send-arp ${SCRIPTS} ${DESTDIR}${BINDIR}
+all: ${BINARIES} ${SCRIPTS} ${SUIDROOT}
 
 clean:
-	rm -f *.o really send-arp
+	rm -f -- ${BINARIES} ${SUIDROOT} tags *.o
 
-.PHONY: install clean
+install: ${BINARIES} ${SUIDROOT}
+	mkdir -p ${DESTDIR}${BINDIR}
+	install -s ${BINARIES} ${DESTDIR}${BINDIR}
+	install ${SCRIPTS} ${DESTDIR}${BINDIR}
+	install -g staff -m 4754 -o root -s ${SUIDROOT} ${DESTDIR}${BINDIR}
+
+tags:
+	ctags -R
+
+.PHONY: all clean install tags
