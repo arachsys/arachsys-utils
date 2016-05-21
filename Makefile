@@ -7,7 +7,7 @@ CFLAGS = -Os -Wall -Wextra
 
 BINARIES = nosetuid
 SCRIPTS = fixscriptpaths where which
-SUIDROOT = really
+SUIDROOT = privbind really
 
 all: ${BINARIES} ${SCRIPTS} ${SUIDROOT}
 
