@@ -1,0 +1,24 @@
+#!/bin/sh
+
+if [ $# -le 0 ]; then
+  cat <<EOF >&2
+Usage: ${0##*/} COMMAND [ARGS]
+Enable unprivileged users to run commands that bind privileged ports.
+Addresses must be permitted for the invoking user in /etc/addresses.
+EOF
+  exit 64
+fi
+
+case ":$LD_PRELOAD:" in
+  *[:[:space:]]libwrapbind.so[:[:space:]]*)
+    ;;
+  *[[:space:]]*)
+    LD_PRELOAD="${LD_PRELOAD} libwrapbind.so"
+    ;;
+  *)
+    LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}libwrapbind.so"
+    ;;
+esac
+
+export LD_PRELOAD
+exec "$@"

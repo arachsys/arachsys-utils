@@ -1,56 +1,177 @@
-#define _GNU_SOURCE
-#include <linux/capability.h>
-#include <sys/prctl.h>
+#include <arpa/inet.h>
 #include <errno.h>
-#include <error.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <pwd.h>
-#include <sched.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sysexits.h>
 #include <unistd.h>
 
-extern int capget(cap_user_header_t header, const cap_user_data_t data);
-extern int capset(cap_user_header_t header, cap_user_data_t data);
+#define CONFIG "/etc/addresses"
 
-int main(int argc, char **argv) {
-  char *namespace;
-  int handle;
-  struct passwd *passwd;
-  struct __user_cap_header_struct header = { _LINUX_CAPABILITY_VERSION_3, 0 };
-  struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+char *progname;
 
-  if (argc < 2) {
-    fprintf(stderr, "usage: %s command [args]\n", argv[0]);
-    exit(1);
+struct sockaddr *compare(struct sockaddr *a, struct sockaddr *b, char *mask) {
+  unsigned char *as, *bs;
+  unsigned int bits = -1;
+  char *invalid;
+
+  if (a->sa_family != b->sa_family)
+    return NULL;
+
+  if (mask && *mask)
+    if (bits = strtol(mask, &invalid, 10), *invalid)
+      return NULL;
+
+  switch (a->sa_family) {
+    case AF_INET:
+      as = (unsigned char *) &((struct sockaddr_in *) a)->sin_addr.s_addr;
+      bs = (unsigned char *) &((struct sockaddr_in *) b)->sin_addr.s_addr;
+      bits = bits < 32 ? bits : 32;
+      break;
+    case AF_INET6:
+      as = (unsigned char *) ((struct sockaddr_in6 *) a)->sin6_addr.s6_addr;
+      bs = (unsigned char *) ((struct sockaddr_in6 *) b)->sin6_addr.s6_addr;
+      bits = bits < 128 ? bits : 128;
+      break;
+    default:
+      return NULL;
   }
 
-  passwd = getpwuid(getuid());
-  if (!passwd)
-    error(EXIT_FAILURE, 0, "failed to determine username");
-  if (asprintf(&namespace, "/run/netns/user-%s", passwd->pw_name) < 0)
-    error(EXIT_FAILURE, errno, "asprintf");
+  while (bits >= 8) {
+    if (*as++ != *bs++)
+      return NULL;
+    bits -= 8;
+  }
 
-  handle = open(namespace, O_RDONLY);
-  if (handle < 0)
-    error(EXIT_FAILURE, 0, "network namespace not found");
+  return (*as >> (8 - bits)) == (*bs >> (8 - bits)) ? a : NULL;
+}
 
-  if (setns(handle, CLONE_NEWNET) < 0)
-    error(EXIT_FAILURE, 0, "failed to join network namespace");
+void error(int status, int errnum, char *format, ...) {
+  va_list args;
 
-  close(handle);
-  free(namespace);
+  fprintf(stderr, "%s: ", progname);
+  va_start(args, format);
+  vfprintf(stderr, format, args);
+  va_end(args);
+  if (errnum != 0)
+    fprintf(stderr, ": %s\n", strerror(errnum));
+  else
+    fputc('\n', stderr);
+  if (status != 0)
+    exit(status);
+}
 
-  prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0);
-  if (setgid(getgid()) < 0 || setuid(getuid()) < 0)
-    error(EXIT_FAILURE, 0, "failed to drop privileges");
+char *getuser(uid_t uid) {
+  struct passwd *passwd;
+  char *user;
 
-  capget(&header, data);
-  data[CAP_NET_BIND_SERVICE >> 5].inheritable
-      = 1 << (CAP_NET_BIND_SERVICE & 31);
-  capset(&header, data);
-  prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_NET_BIND_SERVICE, 0, 0);
+  user = getenv("USER");
+  user = user ? user : getenv("LOGNAME");
+  user = user ? user : getlogin();
+  if (!user || !(passwd = getpwnam(user)) || passwd->pw_uid != uid) {
+    if (!(passwd = getpwuid(uid)))
+      error(1, 0, "Failed to validate your username");
+    user = passwd->pw_name;
+  }
+  endpwent();
+  return user;
+}
 
-  execvp(argv[1], argv + 1);
-  error(EXIT_FAILURE, errno, "exec %s", argv[1]);
+char *match(char *line, uid_t uid, char *user) {
+  char *entry;
+
+  if (strtol(line, &entry, 10) != uid || entry == line) {
+    if (strncmp(line, user, strlen(user)))
+      return NULL;
+    entry = line + strlen(user);
+  }
+
+  return entry[0] == ':' ? entry + 1 : NULL;
+}
+
+struct addrinfo *permitted(struct addrinfo *requested, uid_t uid) {
+  FILE *config;
+  struct addrinfo *entry, hints, *result = NULL;
+  char *host, *line = NULL, *mask, *user;
+  size_t size;
+
+  hints.ai_family = requested->ai_family;
+  hints.ai_socktype = 0;
+  hints.ai_protocol = 0;
+  hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV | AI_PASSIVE;
+
+  user = getuser(uid);
+  if (!(config = fopen(CONFIG, "r")))
+    error(1, 0, "Failed to open %s", CONFIG);
+
+  while (!result && getline(&line, &size, config) >= 0) {
+    if (!(host = match(line, uid, user)))
+      continue;
+    host[strcspn(host, "\n")] = 0;
+    if ((mask = strchr(host, '/')))
+      *mask++ = 0;
+    if (getaddrinfo(host, NULL, &hints, &entry) || !entry)
+      continue;
+    if (compare(requested->ai_addr, entry->ai_addr, mask))
+      result = requested;
+    freeaddrinfo(entry);
+  }
+
+  free(line);
+  fclose(config);
+  return result;
+}
+
+void usage(void) {
+  fprintf(stderr, "\
+Usage: %s ADDRESS PORT < SOCKET\n\
+Bind the socket passed as standard input to a privileged port PORT on IPv4\n\
+or IPv6 address ADDRESS if permitted for the invoking user in %s.\n\
+", progname, CONFIG);
+  exit(EX_USAGE);
+}
+
+int main(int argc, char **argv) {
+  struct addrinfo hints, *requested;
+  int null;
+  uid_t uid;
+
+  progname = argv[0];
+
+  if ((null = open("/dev/null", O_RDWR)) < 0)
+    error(1, 0, "Failed to open /dev/null");
+  if (fcntl(STDOUT_FILENO, F_GETFD) < 0)
+    dup2(null, STDOUT_FILENO);
+  if (fcntl(STDERR_FILENO, F_GETFD) < 0)
+    dup2(null, STDERR_FILENO);
+  if (null != STDIN_FILENO)
+    if (null != STDOUT_FILENO)
+      if (null != STDERR_FILENO)
+        close(null);
+
+  if (argc != 3)
+    usage();
+
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = 0;
+  hints.ai_protocol = 0;
+  hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV | AI_PASSIVE;
+  if (getaddrinfo(argv[1], argv[2], &hints, &requested) || !requested)
+    error(1, 0, "Bad host address");
+
+  uid = getuid();
+  if (uid != 0 && !permitted(requested, uid))
+    error(1, 0, "Permission denied");
+
+  if (bind(STDIN_FILENO, requested->ai_addr, requested->ai_addrlen) < 0)
+    error(1, errno, "bind");
+
+  freeaddrinfo(requested);
+  return EXIT_SUCCESS;
 }
