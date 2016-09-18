@@ -22,7 +22,7 @@ void atoip(const char *s, struct in_addr *i) {
     if ((h = gethostbyname(s)))
       memcpy(i, h->h_addr, sizeof(i));
     else
-      error(1, 0, "unknown host '%s'", s);
+      error(1, 0, "Unknown host '%s'", s);
   }
 }
 
@@ -31,21 +31,21 @@ void atohw(const char *s, u_int8_t *h) {
 
   for (a = b = i = 0; i < ETH_ALEN; i++, h++) {
     if (!(a = tolower(*s++)) || !(b = tolower(*s++)))
-      error(1, 0, "invalid hardware address length");
+      error(1, 0, "Invalid hardware address length");
 
     if (isdigit(a))
       *h = (a - '0') << 4;
     else if (a >= 'a' && a <= 'f')
       *h = (a - 'a' + 10) << 4;
     else
-      error(1, 0, "invalid digit in hardware address");
+      error(1, 0, "Invalid digit in hardware address");
 
     if (isdigit(b))
       *h |= b - '0';
     else if (b >= 'a' && b <= 'f')
       *h |= b - 'a' + 10;
     else
-      error(1, 0, "invalid digit in hardware address");
+      error(1, 0, "Invalid digit in hardware address");
 
     if (*s == ':')
       s++;
