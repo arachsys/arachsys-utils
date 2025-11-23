@@ -1,0 +1,48 @@
+#!/bin/bash -e
+
+if [[ $# -ne 1 ]] || [[ $1 == -* ]]; then
+  echo "Usage: ${0##*/} DOMAIN" >&2
+  exit 64
+fi
+
+if [[ $1 == ?(.|-a) ]]; then
+  if [[ $UID -ne 0 ]]; then
+    echo "Permission denied" >&2
+    exit 1
+  elif ! flock -n 3 2>/dev/null; then
+    echo "Configuration lock busy" >&2
+    exit 1
+  else
+    ${EDITOR:-vi} /etc/dns/data
+    exit $?
+  fi 3</etc/dns
+fi
+
+OLD=$(mktemp -t dnsedit.XXXXXX)
+NEW=$(mktemp -t dnsedit.XXXXXX)
+trap 'rm -f "$OLD" "$NEW"' EXIT
+
+dnsconfig -r "$1" > "$OLD"
+cp "$OLD" "$NEW"
+
+while true; do
+  ${EDITOR:-vi} "$NEW"
+
+  if cmp -s "$OLD" "$NEW"; then
+    echo "DNS records unmodified" >&2
+    exit 0
+  elif dnsconfig -w "$1" < "$NEW"; then
+    exit 0
+  fi
+
+  echo "Failed to update DNS records" >&2
+  while true; do
+    read -p "Return to the editor? (Y/n) " -n 1 -r -u 2
+    echo >&2
+    if [[ $REPLY == ?([Yy]) ]]; then
+      continue 2
+    elif [[ $REPLY == @([NnQq]) ]]; then
+      exit 1
+    fi
+  done
+done
