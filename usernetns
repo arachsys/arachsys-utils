@@ -1,0 +1,52 @@
+#!/bin/bash -e
+
+shopt -s extglob nullglob
+declare -A ADDRESSES=() USERS=()
+
+if [[ -f /etc/userbind ]]; then
+  while read -a LINE; do
+    if USER=$(id -u ${LINE[0]} 2>/dev/null); then
+      for ADDRESS in ${LINE[@]:1}; do
+        if [[ -v ADDRESSES[$ADDRESS] ]]; then
+          echo "/etc/userbind: $ADDRESS belongs to multiple users" >&2
+          exit 1
+        fi
+        ADDRESSES[$ADDRESS]=$USER
+      done
+      USERS[$USER]=$USER
+    else
+      echo "/etc/userbind: ${LINE[0]}: no such user" >&2
+      exit 1
+    fi
+  done < /etc/userbind
+fi
+
+for NETNS in /run/netns/user-+([0-9]); do
+  if [[ -v USERS[${NETNS#/run/netns/user-}] ]]; then
+    ip -n ${NETNS#/run/netns/} address flush dev lo scope global
+    ip route flush via inet6 fe80::2 dev ${NETNS#/run/netns/}
+  else
+    ip netns delete ${NETNS#/run/netns/}
+  fi
+done
+
+for USER in ${!USERS[@]}; do
+  if [[ ! -e /run/netns/user-$USER ]]; then
+    ip netns add user-$USER
+    ip link add user-$USER type veth peer eth0 netns user-$USER
+    ip link set user-$USER addrgenmode none up
+    ip -n user-$USER link set eth0 addrgenmode none up
+    ip -n user-$USER link set lo up
+
+    ip address add fe80::1/64 dev user-$USER
+    ip -n user-$USER address add fe80::2/64 dev eth0
+    ip -n user-$USER -4 route add default via inet6 fe80::1 dev eth0
+    ip -n user-$USER -6 route add default via inet6 fe80::1 dev eth0
+  fi
+done
+
+for ADDRESS in ${!ADDRESSES[@]}; do
+  if ip -n user-${ADDRESSES[$ADDRESS]} address add $ADDRESS dev lo; then
+    ip route add $ADDRESS via inet6 fe80::2 dev user-${ADDRESSES[$ADDRESS]}
+  fi
+done
