@@ -94,10 +94,9 @@ int main(int argc, char **argv) {
     if (fsync(fileno(new)) < 0)
       err(1, "fsync");
 
-    unlink("data.tmp");
-    if (linkat(fileno(new), "", dir, "data.tmp", AT_EMPTY_PATH) < 0)
+    if (linkat(fileno(new), "", dir, "data.new", AT_EMPTY_PATH) < 0)
       err(1, "linkat");
-    if (rename("data.tmp", "data") < 0)
+    if (rename("data.new", "data") < 0)
       err(1, "rename");
     fclose(new);
   }
