@@ -67,7 +67,7 @@ int main(int argc, char **argv) {
 
   if ((dir = open(".", O_RDONLY | O_DIRECTORY)) < 0)
     err(1, "open /etc/dns");
-  if (flock(dir, LOCK_EX) < 0)
+  if (write && flock(dir, LOCK_EX) < 0)
     err(1, "flock /etc/dns");
 
   if (!(old = fopen("data", "r")))
