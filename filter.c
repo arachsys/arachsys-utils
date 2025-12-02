@@ -386,9 +386,9 @@ static int check(const char *domain, uid_t uid) {
 }
 
 static int putline(const char *line, size_t length, FILE *stream) {
-  if (fwrite(line, length, 1, stream) != 1)
+  if (stream && line[0] && fwrite(line, length, 1, stream) != 1)
     return -1;
-  if (putc('\n', stream) != '\n')
+  if (stream && putc('\n', stream) != '\n')
     return -1;
   return 0;
 }
@@ -403,11 +403,10 @@ size_t filter(char *domain, uid_t uid, FILE *input, FILE *include,
     for (size_t i = strlen(line); i-- > 0; line[i] = 0)
       if (line[i] != '\t' && line[i] != '\n' && line[i] != ' ')
         break;
-    if (line[0] == 0 || line[0] == '#') {
-      if (exclude && putline(line, strlen(line), exclude) < 0)
-        err(1, "fwrite");
+    if (line[0] == '#' && putline(line, strlen(line), exclude) < 0)
+      err(1, "fwrite");
+    if (line[0] == 0 || line[0] == '#')
       continue;
-    }
 
     for (size_t i = 0; line[i]; i++)
       if (line[i] >= 0 && line[i] < 32 && line[i] != '\t')
@@ -435,10 +434,10 @@ size_t filter(char *domain, uid_t uid, FILE *input, FILE *include,
         err(1, "stralloc");
 
     if (check(domain, uid)) {
-      if (include && putline(line, strlen(line), include) < 0)
+      if (putline(line, strlen(line), include) < 0)
         err(1, "fwrite");
     } else {
-      if (exclude && putline(line, strlen(line), exclude) < 0)
+      if (putline(line, strlen(line), exclude) < 0)
         err(1, "fwrite");
       if (failc++, errors >= 2)
         break;
