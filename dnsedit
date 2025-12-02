@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-if [[ $# -ne 1 ]] || [[ $1 == -* ]]; then
+if [[ $# -ne 1 ]] || [[ $1 == -!(a) ]]; then
   echo "Usage: ${0##*/} DOMAIN" >&2
   exit 64
 fi
