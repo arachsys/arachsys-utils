@@ -113,7 +113,9 @@ static int check_ip(const stralloc *in, uid_t uid) {
     }
     memcpy(name.s + name.len, "in-addr.arpa\0", 13);
     name.len += 12; /* not including \0 */
-    return auth_name(name.s, uid);
+    if (!auth_name(name.s, uid))
+      return fail("IP address does not belong to you: %s", in->s);
+    return 1;
   }
 
   if (scan_ip6(in->s, ip) == in->len) {
@@ -128,7 +130,9 @@ static int check_ip(const stralloc *in, uid_t uid) {
     }
     memcpy(name.s + name.len, "ip6.arpa\0", 9);
     name.len += 8; /* not including \0 */
-    return auth_name(name.s, uid);
+    if (!auth_name(name.s, uid))
+      return fail("IP address does not belong to you: %s", in->s);
+    return 1;
   }
 
   return fail("Invalid IP address: %s", in->s);
