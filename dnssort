@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -e -o pipefail
+shopt -s dotglob extglob nullglob
+unset LANG LC_{ALL,COLLATE,CTYPE,MESSAGES,MONETARY,NUMERIC,TIME}
+
+ORDERING="CZ.&'@S=+^:-"
+
+if [[ $# -eq 0 ]]; then
+  while read -r LINE; do
+    set -- "${ORDERING#*"${LINE:0:1}"}"
+    set -- $((${#ORDERING} - ${#1} - 1))
+
+    if [[ $1 -ge 0 ]]; then
+      set -- "$1" "${LINE:1}"
+      set -- "$1.${2%%:*}"
+    else
+      printf '%s\n' "$LINE" >&3
+      continue
+    fi
+
+    while [[ $1 == *.* ]]; do
+      printf '%s ' "${1##*.}"
+      set -- "${1%.*}"
+    done
+    printf '%s:%s\n' "$1" "$LINE"
+  done | sort -k 1 -t : -V | cut -d : -f 2- -s
+else
+  echo "Usage: ${0##*/}" >&2
+  exit 64
+fi 3>&1
