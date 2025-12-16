@@ -10,11 +10,11 @@
 
 #include "dnsconfig.h"
 
-void timeout(int signal) {
+static void timeout(int signal) {
   errx(1, "Configuration lock timed out");
 }
 
-int usage(const char *progname) {
+static int usage(const char *progname) {
   fprintf(stderr, "\
 Usage: %s [OPTIONS] DOMAIN\n\
 Options:\n\
