@@ -11,23 +11,26 @@ host() {
   fi
 }
 
-if [[ -f /etc/microdns/sync ]]; then
-  source /etc/microdns/sync
+if [[ $# -ne 1 ]]; then
+  echo "Usage: ${0##*/} DIR" >&2
+  exit 64
+elif [[ -f $1/sync ]]; then
+  source "$1/sync"
 else
-  echo "/etc/microdns/sync not found" >&2
+  echo "$1/sync not found" >&2
   exit 1
 fi
 
-trap 'exec "$0"' HUP
+trap 'exec "$0" "$1"' HUP
 
 while true; do
   for HOST in "${!HOSTS[@]}"; do
     if TMP=$(mktemp /tmp/microdns.XXXXXX); then
-      if timeout 10 ssh -i /etc/microdns/id -n "root@$HOST" \
+      if timeout 10 ssh -i "$1/id" -n "root@$HOST" \
            cat "${HOSTS[$HOST]}" >"$TMP" 2>/dev/null; then
-        if ! cmp -s "/etc/microdns/data.${HOST%%.*}" "$TMP"; then
-          mv -f "$TMP" "/etc/microdns/data.${HOST%%.*}"
-          echo "Replaced /etc/microdns/data.${HOST%%.*}"
+        if ! cmp -s "$1/data.${HOST%%.*}" "$TMP"; then
+          mv -f "$TMP" "$1/data.${HOST%%.*}"
+          echo "Replaced $1/data.${HOST%%.*}"
         fi
       else
         echo "Failed to retrieve data from ${HOST%%.*}"
@@ -36,16 +39,15 @@ while true; do
     fi
   done
 
-  for SRC in /etc/microdns/{head,data.!(cdb|tmp)}; do
-    if [[ $SRC -nt /etc/microdns/data.cdb ]]; then
-      awk '!x[$0]++' /etc/microdns/{head,data.!(cdb|tmp)} \
-        | dnsdata -d /etc/microdns
-      echo "Compiled /etc/microdns/data.cdb"
+  for SRC in "$1"/{?(head),data.!(cdb|tmp)}; do
+    if [[ $SRC -nt $1/data.cdb ]]; then
+      awk '!x[$0]++' "$1"/{?(head),data.!(cdb|tmp)} | dnsdata -d "$1"
+      echo "Compiled $1/data.cdb"
 
-      if type -p git >/dev/null && [[ -d /etc/microdns/.git ]]; then
-        git -C /etc/microdns add /etc/microdns/{head,data.!(cdb|tmp)} \
-          && ! git -C /etc/microdns diff --cached --quiet \
-          && git -C /etc/microdns commit -m 'Record update from dns-sync' -q
+      if type -p git >/dev/null && [[ -d $1/.git ]]; then
+        git -C "$1" add ?(head) data.!(cdb|tmp) \
+          && ! git -C "$1" diff --cached --quiet \
+          && git -C "$1" commit -m 'Record update from dns-sync' -q
       fi
     fi
   done
