@@ -1,0 +1,208 @@
+#!/bin/bash
+
+set -o pipefail
+shopt -s extglob nullglob
+
+die() {
+  if [[ $# -gt 0 ]]; then
+    printf '%s\n' "$@" >&2
+  fi
+  exit 1
+}
+
+usage() {
+  cat >&2 <<EOF
+Usage:
+  ${0##*/} list
+  ${0##*/} run NAME MEMORY VCPUS [ADDRESS]...
+  ${0##*/} start NAME MEMORY VCPUS [ADDRESS]...
+  ${0##*/} stop NAME
+  ${0##*/} add NAME [ADDRESS]...
+  ${0##*/} remove NAME [ADDRESS]...
+EOF
+  exit 64
+}
+
+alive() {
+  flock -w ${2:-0} -E 2 0 2>/dev/null </run/guest/$1.pid
+  return $(($? != 2))
+}
+
+mac() {
+  set -- $(b2sum <<< $1)
+  echo 02:${1:0:2}:${1:2:2}:${1:4:2}:${1:6:2}:${1:8:2}
+}
+
+uid() {
+  set -- $(b2sum <<< $1)
+  echo $((65536 + 0x${1:0:4}))
+}
+
+list() {
+  if [[ $# -eq 0 ]]; then
+    set -- /sys/class/net/guest-*
+    while [[ $# -gt 0 ]]; do
+      if alive ${1##*-}; then
+        echo "${1##*-} running"
+      else
+        echo "${1##*-} stopped"
+      fi
+      shift
+    done
+  else
+    usage
+  fi
+}
+
+run() {
+  if [[ $# -lt 3 ]]; then
+    usage
+  elif [[ $1 != [a-z]*([a-z0-9]) || $1 == root ]]; then
+    die "Invalid guest name: $1"
+  elif [[ $2 != [1-9]*([0-9]) || $2 -lt 1024  || $2 -gt 65536 ]]; then
+    die "Invalid guest memory size: $2"
+  elif [[ $3 != [1-9]*([0-9]) || $3 -gt 64 ]]; then
+    die "Invalid guest vCPU count: $3"
+  elif [[ ! -e /dev/$HOSTNAME/$1 ]]; then
+    die "Drive for guest $1 not found"
+  fi
+
+  mkdir -p /run/guest
+  touch /run/guest/$1.pid
+
+  if flock -n 3 2>/dev/null; then
+    local ID=$(uid $1) MAC=$(mac $1)
+    chmod 0666 /dev/kvm /dev/net/tun
+    chown $ID:$ID /dev/$HOSTNAME/$1
+    echo $$ >/run/guest/$1.pid
+
+    if [[ ! -e /sys/class/net/guest-$1 ]]; then
+      ip tuntap add guest-$1 mode tap user $ID group $ID
+    fi
+
+    ip link set guest-$1 addrgenmode none
+    ip link set guest-$1 up
+    ip route flush dev guest-$1
+    ip address flush dev guest-$1
+    ip address add fe80::1/64 dev guest-$1
+    add $1 "${@:4}"
+
+    unshare -S $ID -G $ID hypervisor --cpus boot=$3 --memory size=${2}M \
+      --disk "path=/dev/$HOSTNAME/$1" --net "tap=guest-$1,mac=$MAC" \
+      --kernel "$(cd "${0%/*}/../lib/guest" && echo "$PWD/linux")" \
+      --cmdline "quiet root=/dev/vda"
+
+    ip tuntap del guest-$1 mode tap 2>/dev/null
+    chown root:root /dev/$HOSTNAME/$1
+    rm -f /run/guest/$1.pid
+  else
+    die "Guest $1 is already running"
+  fi 3</run/guest/$1.pid
+}
+
+start() {
+  if [[ $# -lt 3 ]]; then
+    usage
+  elif [[ $1 != [a-z]*([a-z0-9]) || $1 == root ]]; then
+    die "Invalid guest name: $1"
+  elif [[ $2 != [1-9]*([0-9]) || $2 -lt 1024  || $2 -gt 65536 ]]; then
+    die "Invalid guest memory size: $2"
+  elif [[ $3 != [1-9]*([0-9]) || $3 -gt 64 ]]; then
+    die "Invalid guest vCPU count: $3"
+  fi
+
+  if [[ ! -e /dev/$HOSTNAME/$1 ]]; then
+    die "Drive for guest $1 not found"
+  elif alive $1; then
+    die "Guest $1 is already running"
+  fi
+
+  local ID=$(uid $1) MAC=$(mac $1)
+  mkdir -p /var/log/guest /run/guest
+  chmod 0666 /dev/kvm /dev/net/tun
+  chown $ID:$ID /dev/$HOSTNAME/$1
+
+  if [[ ! -e /sys/class/net/guest-$1 ]]; then
+    ip tuntap add guest-$1 mode tap user $ID group $ID
+  fi
+
+  ip link set guest-$1 addrgenmode none
+  ip link set guest-$1 up
+  ip route flush dev guest-$1
+  ip address flush dev guest-$1
+  ip address add fe80::1/64 dev guest-$1
+  add $1 "${@:4}"
+
+  daemon -l /var/log/guest/$1 -p /run/guest/$1.pid -u $ID:$ID \
+    hypervisor --cpus boot=$3 --memory size=${2}M \
+      --disk "path=/dev/$HOSTNAME/$1" --net "tap=guest-$1,mac=$MAC" \
+      --kernel "$(cd "${0%/*}/../lib/guest" && echo "$PWD/linux")" \
+      --cmdline "quiet root=/dev/vda"
+
+  if ! alive $1 0.1; then
+    die "Guest $1 failed to start: see /var/log/guest/$1"
+  fi
+}
+
+stop() {
+  if [[ $# -ne 1 ]]; then
+    usage
+  elif [[ $1 != [a-z]*([a-z0-9]) ]]; then
+    die "Invalid guest name: $1"
+  fi
+
+  mkdir -p /run/guest
+  touch /run/guest/$1.pid
+
+  if flock -n 0; then
+    ip tuntap del guest-$1 mode tap 2>/dev/null
+    chown root:root /dev/$HOSTNAME/$1
+    rm -f /run/guest/$1.pid
+  elif kill -TERM "$(< /dev/stdin)" && flock -w 1 0; then
+    ip tuntap del guest-$1 mode tap 2>/dev/null
+    chown root:root /dev/$HOSTNAME/$1
+    rm -f /run/guest/$1.pid
+  else
+    die "Guest $1 failed to stop on SIGTERM"
+  fi </run/guest/$1.pid
+}
+
+add() {
+  if [[ $# -lt 1 ]]; then
+    usage
+  elif [[ $1 != [a-z]*([a-z0-9]) ]]; then
+    die "Invalid guest name: $1"
+  elif [[ ! -e /sys/class/net/guest-$1 ]]; then
+    die "Guest $1 is not running"
+  fi
+
+  while [[ $# -gt 1 ]]; do
+    if ! ip route add "$2" via inet6 fe80::2 dev guest-$1; then
+      echo "Warning: failed to route address $2 to guest $1"
+    fi 2>/dev/null
+    set -- $1 "${@:3}"
+  done | [[ -z $(tee /dev/stderr) ]]
+}
+
+remove() {
+  if [[ $# -lt 1 ]]; then
+    usage
+  elif [[ $1 != [a-z]*([a-z0-9]) ]]; then
+    die "Invalid guest name: $1"
+  elif [[ ! -e /sys/class/net/guest-$1 ]]; then
+    die "Guest $1 is not running"
+  fi
+
+  while [[ $# -gt 1 ]]; do
+    if ! ip route del "$2" via inet6 fe80::2 dev guest-$1; then
+      echo "Warning: address $2 is not routed to guest $1"
+    fi 2>/dev/null
+    set -- $1 "${@:3}"
+  done | [[ -z $(tee /dev/stderr) ]]
+}
+
+if [[ $1 == @(list|run|start|stop|add|remove) ]]; then
+  $1 "${@:2}"
+else
+  usage
+fi

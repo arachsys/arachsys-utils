@@ -1,0 +1,54 @@
+#!/bin/bash
+
+set -o pipefail
+shopt -s extglob nullglob
+
+declare -A HOSTS=()
+
+host() {
+  if [[ $# -gt 0 ]]; then
+    HOSTS[$1]=${2:-/etc/dns/data}
+  fi
+}
+
+if [[ -f /etc/microdns/sync ]]; then
+  source /etc/microdns/sync
+else
+  echo "/etc/microdns/sync not found" >&2
+  exit 1
+fi
+
+trap 'exec "$0"' HUP
+
+while true; do
+  for HOST in "${!HOSTS[@]}"; do
+    if TMP=$(mktemp /tmp/microdns.XXXXXX); then
+      if timeout 10 ssh -i /etc/microdns/id -n "root@$HOST" \
+           cat "${HOSTS[$HOST]}" >"$TMP" 2>/dev/null; then
+        if ! cmp -s "/etc/microdns/data.${HOST%%.*}" "$TMP"; then
+          mv -f "$TMP" "/etc/microdns/data.${HOST%%.*}"
+          echo "Replaced /etc/microdns/data.${HOST%%.*}"
+        fi
+      else
+        echo "Failed to retrieve data from ${HOST%%.*}"
+      fi
+      rm -f "$TMP"
+    fi
+  done
+
+  for SRC in /etc/microdns/{head,data.!(cdb|tmp)}; do
+    if [[ $SRC -nt /etc/microdns/data.cdb ]]; then
+      awk '!x[$0]++' /etc/microdns/{head,data.!(cdb|tmp)} \
+        | dnsdata -d /etc/microdns
+      echo "Compiled /etc/microdns/data.cdb"
+
+      if type -p git >/dev/null && [[ -d /etc/microdns/.git ]]; then
+        git -C /etc/microdns add /etc/microdns/{head,data.!(cdb|tmp)} \
+          && ! git -C /etc/microdns diff --cached --quiet \
+          && git -C /etc/microdns commit -m 'Record update from dns-sync' -q
+      fi
+    fi
+  done
+
+  read -t 120
+done <><(:)

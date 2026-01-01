@@ -1,0 +1,58 @@
+#!/bin/bash
+
+shopt -s extglob nullglob
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: ${0##*/} ADDRESS [ADDRESS]..." >&2
+  exit 64
+elif [[ ! -f /etc/wifiguard ]]; then
+  exit 1
+fi
+
+exec < <(uevent -l 1 </dev/null)
+read -r READY
+
+for UEVENT in /sys/class/rfkill/*/uevent; do
+  echo change >"$UEVENT"
+done
+
+declare -A ENV=()
+while read -r KEY VALUE; do
+  if [[ -n $KEY ]]; then
+    ENV[$KEY]=$VALUE
+    continue
+  fi
+
+  if [[ ${ENV[ACTION]} != @(add|change) ]] \
+        && [[ ${ENV[SUBSYSTEM]} != rfkill ]] \
+        && [[ ${ENV[RFKILL_TYPE]} != wlan ]]; then
+    continue
+  fi
+
+  if [[ ! -f /run/netns/root ]]; then
+    ip netns attach root 1
+    ip netns set root 0
+  fi
+
+  if [[ ! -f /run/netns/wifi ]]; then
+    ip netns add wifi
+    ip -n wifi link set lo up
+
+    iw reg set GB
+    iw phy ${ENV[RFKILL_NAME]} set netns name wifi
+    ip netns exec wifi daemon -r iwd
+
+    ( export WG_ENDPOINT_RESOLUTION_RETRIES=infinity
+      ip -n wifi link add wg0 type wireguard
+      ip netns exec wifi wg setconf wg0 /etc/wifiguard
+      ip -n wifi link set wg0 netns root up
+      while [[ $# -gt 0 ]]; do
+        ip address add "$1" dev wg0
+        ip route add default from "$1" dev wg0
+        shift
+      done
+    ) </dev/null >/dev/null 2>&1 &
+  else
+    iw phy ${ENV[RFKILL_NAME]} set netns name wifi
+  fi
+done

@@ -1,0 +1,132 @@
+#!/bin/bash
+
+set -e -o pipefail
+shopt -s extglob nullglob
+
+declare -A LABELS=()
+declare -a HOSTS=()
+declare -a DOMAINS=()
+declare -a NAMESERVERS=()
+
+TWILIO_SID=
+TWILIO_TOKEN=
+TWILIO_FROM=
+TWILIO_TO=
+
+alert() {
+  if [[ -z $TWILIO_SID ]] || [[ -z $TWILIO_TOKEN ]] \
+      || [[ -z $TWILIO_FROM ]] || [[ -z $TWILIO_TO ]]; then
+    return
+  fi
+
+  curl -o /dev/null -s -u "$TWILIO_SID:$TWILIO_TOKEN" \
+    --data-urlencode "From=$TWILIO_FROM" \
+    --data-urlencode "To=$TWILIO_TO" \
+    --data-urlencode "Body=$(< /dev/stdin)" \
+    "https://api.twilio.com/2010-04-01/Accounts/$TWILIO_SID/Messages.json"
+}
+
+check() {
+  if [[ ${#HOSTS[@]} -gt 0 ]]; then
+    fping -q -r 5 -t 200 -u "${HOSTS[@]}" | while read ADDRESS; do
+      echo "${LABELS[$ADDRESS]} down"
+    done
+  fi
+
+  for NS in "${NAMESERVERS[@]}"; do
+    for SOA in "${DOMAINS[@]}"; do
+      if ! command host -r -t soa -4 "$SOA" "$NS" >/dev/null 2>&1; then
+        echo "$NS v4 down"
+        break
+      fi
+    done
+
+    for SOA in "${DOMAINS[@]}"; do
+      if ! command host -r -t soa -6 "$SOA" "$NS" >/dev/null 2>&1; then
+        echo "$NS v6 down"
+        break
+      fi
+    done
+
+    for SOA in "${DOMAINS[@]}"; do
+      if ! command host -r -t soa -T "$SOA" "$NS" >/dev/null 2>&1; then
+        echo "$NS tcp down"
+        break
+      fi
+    done
+  done
+}
+
+host() {
+  while [[ $# -gt 0 ]]; do
+    local ADDRESSES=$(getent ahosts "$1" | awk '!x[$1]++ { print $1 }')
+    if [[ -n $ADDRESSES ]]; then
+      for ADDRESS in $ADDRESSES; do
+        if [[ $ADDRESS == +([0-9.]) ]]; then
+          LABELS[$ADDRESS]="$1 v4"
+        else
+          LABELS[$ADDRESS]="$1 v6"
+        fi
+        HOSTS+=($ADDRESS)
+      done
+    else
+      alert <<< "$1 not found"
+    fi
+    shift
+  done
+}
+
+domain() {
+  while [[ $# -gt 0 ]]; do
+    DOMAINS+=($1)
+    shift
+  done
+}
+
+nameserver() {
+  while [[ $# -gt 0 ]]; do
+    NAMESERVERS+=($1)
+    shift
+  done
+}
+
+twilio-sid() {
+  TWILIO_SID=$*
+}
+
+twilio-token() {
+  TWILIO_TOKEN=$*
+}
+
+twilio-from() {
+  TWILIO_FROM=$*
+}
+
+twilio-to() {
+  TWILIO_TO=$*
+}
+
+if [[ -f /etc/monitor ]]; then
+  source /etc/monitor
+else
+  echo "/etc/monitor not found" >&2
+  exit 1
+fi
+
+if set +e && wait; then
+  set -- "$STATE"
+  trap 'STATE="$1" exec "$0"' HUP
+  trap 'STATE=USR1 exec "$0"' USR1
+
+  if [[ ! -v STATE ]]; then
+    read -t $((120 - EPOCHSECONDS % 60))
+  fi
+
+  while true; do
+    set -- "$(check)" "$1"
+    if [[ $1 != $2 ]]; then
+      alert <<< "${1:-all hosts are up}"
+    fi
+    read -t $((60 - EPOCHSECONDS % 60))
+  done
+fi <><(:)
