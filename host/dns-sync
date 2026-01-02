@@ -45,7 +45,7 @@ while true; do
       echo "Compiled $1/data.cdb"
 
       if type -p git >/dev/null && [[ -d $1/.git ]]; then
-        git -C "$1" add ?(head) data.!(cdb|tmp) \
+        git -C "$1" add 'data.*' ':!data.cdb' ':!data.tmp' \
           && ! git -C "$1" diff --cached --quiet \
           && git -C "$1" commit -m 'Record update from dns-sync' -q
       fi
