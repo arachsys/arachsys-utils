@@ -5,7 +5,7 @@ shopt -s extglob nullglob
 
 declare -A HOSTS=()
 
-host() {
+pull() {
   if [[ $# -gt 0 ]] && [[ ${1%%.*} != ?(cdb|tmp) ]]; then
     HOSTS[$1]=${2:-/etc/dns/data}
   fi
