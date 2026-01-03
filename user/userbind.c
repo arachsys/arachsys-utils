@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
       err(1, "setns");
     close(fd);
 
-    if (prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) < 0)
+    if (prctl(PR_SET_KEEPCAPS, 1L, 0L, 0L, 0L) < 0)
       err(1, "prctl PR_SET_KEEPCAPS");
     if (setgid(getgid()) < 0 || setuid(getuid()) < 0)
       err(1, "setuid");
@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
       err(1, "capset");
 
     if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE,
-          CAP_NET_BIND_SERVICE, 0, 0) < 0)
+          CAP_NET_BIND_SERVICE, 0L, 0L) < 0)
       err(1, "prctl PR_CAP_AMBIENT_RAISE");
   } else if (setgid(getgid()) < 0 || setuid(getuid()) < 0) {
     err(1, "setuid");
