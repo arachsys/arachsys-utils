@@ -2,7 +2,7 @@ BINDIR := $(PREFIX)/bin
 CFLAGS := -O2 -Wall
 
 %:: %.c Makefile
-	$(CC) $(CFLAGS) $(LDFLAGS) -I . -o $@ $(filter %.c,$^)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(filter %.c,$^)
 
 all: dnsconfig dnsedit dnslist dnssort userbind usernetns
 
