@@ -24,8 +24,8 @@ while read -r KEY VALUE; do
   fi
 
   if [[ ${ENV[ACTION]} != @(add|change) ]] \
-        && [[ ${ENV[SUBSYSTEM]} != rfkill ]] \
-        && [[ ${ENV[RFKILL_TYPE]} != wlan ]]; then
+        || [[ ${ENV[SUBSYSTEM]} != rfkill ]] \
+        || [[ ${ENV[RFKILL_TYPE]} != wlan ]]; then
     continue
   fi
 
