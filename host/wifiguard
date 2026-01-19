@@ -41,14 +41,15 @@ while read -r KEY VALUE; do
     iw reg set GB
     iw phy ${ENV[RFKILL_NAME]} set netns name wifi
     ip netns exec wifi daemon -r iwd
+    ip netns exec wifi $(type -P sshd)
 
     ( export WG_ENDPOINT_RESOLUTION_RETRIES=infinity
       ip -n wifi link add wg0 type wireguard
       ip netns exec wifi wg setconf wg0 /etc/wifiguard
-      ip -n wifi link set wg0 netns root up
+      ip -n wifi link set wg0 up
       while [[ $# -gt 0 ]]; do
-        ip address add "$1" dev wg0
-        ip route add default from "$1" dev wg0
+        ip -n wifi address add "$1" dev wg0
+        ip -n wifi route add default from "$1" dev wg0
         shift
       done
     ) </dev/null >/dev/null 2>&1 &
