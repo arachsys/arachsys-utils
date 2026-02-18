@@ -20,12 +20,13 @@ def log(fields, timestamp):
       os.pwrite(fd, bytearray(43200 * record.size), header.size)
       os.pwrite(fd, header.pack(*v1), 0)
     elif t0 < t1:
-      os.pwrite(fd, record.pack(
-          max(1e9 * (v1[1] - v0[1]) / (v1[0] - v0[0]), 0.0),
-          max(1e9 * (v1[2] - v0[2]) / (v1[0] - v0[0]), 0.0),
-          max(1e9 * (v1[3] - v0[3]) / (v1[0] - v0[0]), 0.0),
-          max(1e9 * (v1[4] - v0[4]) / (v1[0] - v0[0]), 0.0)
-        ) * (t1 - t0), header.size + (t0 % 43200) * record.size)
+      packed = record.pack(
+        max(1e9 * (v1[1] - v0[1]) / (v1[0] - v0[0]), 0.0),
+        max(1e9 * (v1[2] - v0[2]) / (v1[0] - v0[0]), 0.0),
+        max(1e9 * (v1[3] - v0[3]) / (v1[0] - v0[0]), 0.0),
+        max(1e9 * (v1[4] - v0[4]) / (v1[0] - v0[0]), 0.0))
+      for t in range(t0, t1):
+        os.pwrite(fd, packed, header.size + (t % 43200) * record.size)
       os.pwrite(fd, header.pack(*v1), 0)
   finally:
     os.close(fd)
