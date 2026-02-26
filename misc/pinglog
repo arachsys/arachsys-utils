@@ -1,0 +1,138 @@
+#!/bin/python
+
+import math, os, select, socket, struct, sys, time
+
+header = struct.Struct('<L')
+record = struct.Struct('<2B3e')
+packet = struct.Struct('!B5xH')
+timestamp = struct.Struct('qq')
+
+class pingsocket(socket.socket):
+  def __init__(self, family, target = None, source = None):
+    if family == socket.AF_INET:
+      super().__init__(family, socket.SOCK_DGRAM, socket.IPPROTO_ICMP)
+      self.request, self.reply = 8, 0
+    if family == socket.AF_INET6:
+      super().__init__(family, socket.SOCK_DGRAM, socket.IPPROTO_ICMPV6)
+      self.request, self.reply = 128, 129
+    if source is not None:
+      self.bind((source, 0))
+      self.source = source
+    if target is not None:
+      self.connect((target, 0))
+      self.target = target
+
+def create(target, source = None):
+  try:
+    for info in socket.getaddrinfo(target, None, type = socket.SOCK_DGRAM):
+      ping = pingsocket(info[0], info[4][0])
+      ping.setsockopt(socket.SOL_SOCKET, 37, 280) # timestamping
+      ping.setblocking(False)
+      yield ping
+  except OSError as error:
+    print(command, target, error.strerror, file = sys.stderr, sep = ': ')
+    sys.exit(1)
+
+def handle(event, ping, sequence):
+  if event & select.POLLERR:
+    try:
+      ancillary = ping.recvmsg(65536, 65536, socket.MSG_ERRQUEUE)[1]
+      for level, kind, data in ancillary:
+        if level == socket.SOL_SOCKET and kind == 37: # timestamping
+          unit, nano = timestamp.unpack_from(data)
+          ping.txstamp = unit + 1e-9 * nano
+          ping.txcount = ping.txcount + 1
+    except (BlockingIOError, OSError, struct.error):
+      pass
+  if event & select.POLLIN:
+    try:
+      data, ancillary = ping.recvmsg(65536, 65536)[:2]
+      if packet.unpack_from(data) == (ping.reply, sequence):
+        for level, kind, data in ancillary:
+          if level == socket.SOL_SOCKET and kind == 37: # timestamping
+            unit, nano = timestamp.unpack_from(data)
+            ping.rxstamp = unit + 1e-9 * nano
+            ping.rxcount = ping.rxcount + 1
+    except (BlockingIOError, OSError, struct.error):
+      pass
+
+def log(target, slot, *fields):
+  try:
+    fd = os.open(target, os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+      os.ftruncate(fd, header.size + 43200 * record.size)
+      last = header.unpack(os.pread(fd, header.size, 0))[0]
+      if last + 43200 < slot:
+        os.pwrite(fd, bytearray(43200 * record.size), header.size)
+      else:
+        for t in range(last + 1, slot):
+          offset = header.size + (t % 43200) * record.size
+          os.pwrite(fd, bytearray(record.size), offset)
+      offset = header.size + (slot % 43200) * record.size
+      os.pwrite(fd, record.pack(*fields), offset)
+      os.pwrite(fd, header.pack(slot), 0)
+    finally:
+      os.close(fd)
+  except OSError as error:
+    print(command, target, error.strerror, file = sys.stderr, sep = ': ')
+
+command = os.path.basename(sys.argv[0])
+if len(sys.argv) < 2:
+  print(f'Usage: {command} HOST...', file = sys.stderr)
+  sys.exit(64)
+
+ping = {
+  socket.fileno(): socket
+    for target in sys.argv[1:]
+    for socket in create(target)
+}
+
+pollfd = select.poll()
+for fd in ping:
+  pollfd.register(fd, select.POLLIN | select.POLLERR)
+
+sequence = 0
+deadline = math.ceil(time.monotonic())
+time.sleep(deadline - time.monotonic())
+
+while True:
+  for fd in ping:
+    ping[fd].rxcount = 0
+    ping[fd].txcount = 0
+    ping[fd].min = math.inf
+    ping[fd].max = 0.0
+    ping[fd].sum = 0.0
+  slot = int(time.time() / 60)
+
+  while True:
+    sequence = sequence + 1 & 65535
+    deadline = deadline + 1
+
+    for fd in ping:
+      try:
+        ping[fd].send(packet.pack(ping[fd].request, sequence))
+      except OSError as error:
+        print(command, error.strerror, file = sys.stderr, sep = ': ')
+      ping[fd].rxstamp = 0
+      ping[fd].txstamp = 0
+
+    while (remaining := deadline - time.monotonic()) > 0:
+      for fd, event in pollfd.poll(remaining * 1000):
+        handle(event, ping[fd], sequence)
+
+    for fd in ping:
+      if ping[fd].rxstamp and ping[fd].txstamp:
+        rtt = ping[fd].rxstamp - ping[fd].txstamp
+        ping[fd].min = min(ping[fd].min, rtt)
+        ping[fd].max = max(ping[fd].max, rtt)
+        ping[fd].sum = ping[fd].sum + rtt
+
+    if int(time.time() / 60) != slot:
+      break
+
+  for fd in ping:
+    if ping[fd].rxcount > 0:
+      stats = ping[fd].min, ping[fd].max, ping[fd].sum / ping[fd].rxcount
+    else:
+      stats = 0.0, 0.0, 0.0
+    log(ping[fd].target, slot, ping[fd].txcount, ping[fd].rxcount, *stats)
