@@ -6,7 +6,7 @@ ifstat = r'([a-z][a-z\d.-]*)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*'
 ifstat = re.compile(ifstat, re.ASCII)
 
 header = struct.Struct('<5Q')
-record = struct.Struct('<4f')
+record = struct.Struct('<4e')
 
 def log(fields, timestamp):
   fd = os.open(fields[0], os.O_RDWR | os.O_CREAT, 0o666)
@@ -21,10 +21,10 @@ def log(fields, timestamp):
       os.pwrite(fd, header.pack(*v1), 0)
     elif t0 < t1:
       packed = record.pack(
-        max(1e9 * (v1[1] - v0[1]) / (v1[0] - v0[0]), 0.0),
-        max(1e9 * (v1[2] - v0[2]) / (v1[0] - v0[0]), 0.0),
-        max(1e9 * (v1[3] - v0[3]) / (v1[0] - v0[0]), 0.0),
-        max(1e9 * (v1[4] - v0[4]) / (v1[0] - v0[0]), 0.0))
+        max(1e3 * (v1[1] - v0[1]) / (v1[0] - v0[0]), 0.0),
+        max(1e3 * (v1[2] - v0[2]) / (v1[0] - v0[0]), 0.0),
+        max(1e3 * (v1[3] - v0[3]) / (v1[0] - v0[0]), 0.0),
+        max(1e3 * (v1[4] - v0[4]) / (v1[0] - v0[0]), 0.0))
       for t in range(t0, t1):
         os.pwrite(fd, packed, header.size + (t % 43200) * record.size)
       os.pwrite(fd, header.pack(*v1), 0)
