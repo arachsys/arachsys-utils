@@ -37,7 +37,7 @@ if len(sys.argv) < 3:
   sys.exit(64)
 
 try:
-  addresses = socket.getaddrinfo(*sys.argv[1:3], type=socket.SOCK_STREAM)
+  addresses = socket.getaddrinfo(*sys.argv[1:3], type = socket.SOCK_STREAM)
   addresses = [(info[4][0], info[4][1]) for info in addresses]
 except socket.gaierror as error:
   print(command, f'{sys.argv[1]}:{sys.argv[2]}', error.strerror,
