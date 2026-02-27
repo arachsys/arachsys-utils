@@ -10,11 +10,11 @@
       for (let i = 0; i < 43200; i++)
         peak = Math.max(peak, rx[i], tx[i]);
       while (true) {
-        if (peak <= scale)
+        if (peak * 0.99 <= scale)
           return [scale, 1, 5];
-        if (peak <= scale * 2)
+        if (peak * 0.99 <= scale * 2)
           return [scale * 2, 2, 2];
-        if (peak <= scale * 5)
+        if (peak * 0.99 <= scale * 5)
           return [scale * 5, 1, 5];
         scale = scale * 10;
       }
