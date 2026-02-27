@@ -1,0 +1,151 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="author" content="Chris Webb, chris@arachsys.com">
+  <title>Ping Latency</title>
+
+  <script type="module">
+    function autorange(rtt) {
+      let peak = 0, scale = 1;
+      for (let i = 0; i < 43200; i++)
+        peak = Math.max(peak, rtt[i]);
+      while (true) {
+        if (peak <= scale)
+          return [scale, 1, 5];
+        if (peak <= scale * 2)
+          return [scale * 2, 2, 2];
+        if (peak <= scale * 5)
+          return [scale * 5, 1, 5];
+        scale = scale * 10;
+      }
+    }
+
+    function element(parent, name, attributes) {
+      const namespace = attributes['xmlns'] || parent.namespaceURI;
+      const element = document.createElementNS(namespace, name);
+      for (const key in attributes)
+        if (key == 'text')
+          element.textContent = attributes[key];
+        else if (key != 'xmlns')
+          element.setAttribute(key, attributes[key]);
+      parent.appendChild(element);
+      return element;
+    }
+
+    document.addEventListener('DOMContentLoaded', async function() {
+      const div = document.getElementById('container');
+      const response = await fetch('ping.json');
+      const ping = await response.json();
+
+      for (const { name, path } of ping ) {
+        const title = element(div, 'div', {
+          'class': 'title', 'text': name
+        });
+
+        const graph = element(div, 'svg', {
+          'height': 140, 'viewBox': '-43210 -240 43220 280',
+          'xmlns': 'http://www.w3.org/2000/svg'
+        });
+
+        fetch(path).then(async function(response) {
+          const buffer = await response.arrayBuffer();
+          const view = new DataView(buffer);
+          const now = view.getUint32(0, true);
+
+          let min = new Float32Array(43200);
+          let max = new Float32Array(43200);
+          let avg = new Float32Array(43200);
+          let pdr = new Float32Array(43200);
+
+          for (let i = 0, t = now; i < 43200; i++, t--) {
+            const txc = view.getUint8(4 + t % 43200 * 8, true);
+            const rxc = view.getUint8(5 + t % 43200 * 8, true);
+            min[i] = view.getFloat16(6 + t % 43200 * 8, true) * 1e3;
+            max[i] = view.getFloat16(8 + t % 43200 * 8, true) * 1e3;
+            avg[i] = view.getFloat16(10 + t % 43200 * 8, true) * 1e3;
+            pdr[i] = txc ? rxc / txc : 1.0;
+          }
+
+          const [scale, major, minor] = autorange(max);
+          title.textContent = `${title.textContent} / ${scale}ms`;
+          element(graph, 'title', { 'text': title.textContent });
+
+          for (let i = 0, t = now; i <= 43200; i++, t--) {
+            if (t % 180 == 0) {
+              const date = new Date(60000 * t).toISOString();
+              element(graph, 'text', {
+                'text': t % 1440 ? date.slice(11, 16) : date.slice(0, 10),
+                'text-anchor': 'middle', 'x': -i, 'y': 30
+              });
+              element(graph, 'line', {
+                'stroke': '#bbf', 'x1': -i, 'y1': -200, 'x2': -i, 'y2': 10
+              });
+            } else if (t % 60 == 0) {
+              element(graph, 'line', {
+                'stroke': '#edf', 'x1': -i, 'y1': -200, 'x2': -i, 'y2': 10
+              });
+            }
+          }
+
+          for (let i = 1; i <= major * minor; i++) {
+            const y = -200 * i / major / minor;
+            element(graph, 'line', {
+              'stroke': i % minor ? '#edf' : '#bbf',
+              'x1': -43210, 'y1': y, 'x2': 10, 'y2': y
+            });
+          }
+
+          element(graph, 'path', {
+            'fill': 'none', 'stroke': '#00f3',
+            'd': Array.from(avg, function (_, i) {
+              const y0 = Math.round(-200 * min[i] / scale);
+              const y1 = Math.round(-200 * max[i] / scale);
+              return `M ${-i} ${y0} V ${y1}`;
+            }).join(' ')
+          });
+
+          element(graph, 'polyline', {
+            'fill': 'none', 'stroke': '#00f', 'stroke-width': 2,
+            'points': Array.from(avg, (x, i) =>
+              `${-i} ${Math.round(-200 * x / scale)}`).join(' ')
+          });
+
+          element(graph, 'path', {
+            'fill': 'none', 'stroke': '#f00',
+            'd': Array.from(pdr, (x, i) =>
+              `M ${-i} -200 V ${-200 * x}`).join(' ')
+          });
+
+          element(graph, 'line', {
+            'stroke': '#000', 'x1': -43210, 'y1': 0, 'x2': 10, 'y2': 0
+          });
+        });
+      }
+
+      div.scrollLeft = div.scrollWidth - div.clientWidth;
+    })
+  </script>
+
+  <style>
+    #container {
+      overflow-x: scroll;
+      scrollbar-width: none;
+    }
+
+    #container .title {
+      font: bold 10px sans-serif;
+      position: absolute;
+      right: 10px;
+    }
+
+    svg {
+      font: 20px sans-serif;
+      margin: 0 0 10px 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container"></div>
+</body>
+</html>
