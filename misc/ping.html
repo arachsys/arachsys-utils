@@ -53,16 +53,16 @@
           const now = view.getUint32(0, true);
 
           let min = new Float32Array(43200);
-          let max = new Float32Array(43200);
           let avg = new Float32Array(43200);
+          let max = new Float32Array(43200);
           let pdr = new Float32Array(43200);
 
           for (let i = 0, t = now; i < 43200; i++, t--) {
             const txc = view.getUint8(4 + t % 43200 * 8, true);
             const rxc = view.getUint8(5 + t % 43200 * 8, true);
             min[i] = view.getFloat16(6 + t % 43200 * 8, true) * 1e3;
-            max[i] = view.getFloat16(8 + t % 43200 * 8, true) * 1e3;
-            avg[i] = view.getFloat16(10 + t % 43200 * 8, true) * 1e3;
+            avg[i] = view.getFloat16(8 + t % 43200 * 8, true) * 1e3;
+            max[i] = view.getFloat16(10 + t % 43200 * 8, true) * 1e3;
             pdr[i] = txc ? rxc / txc : 1.0;
           }
 
