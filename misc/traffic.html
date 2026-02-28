@@ -21,7 +21,7 @@
     }
 
     function element(parent, name, attributes) {
-      const namespace = attributes['xmlns'] || parent.namespaceURI;
+      const namespace = attributes['xmlns'] ?? parent.namespaceURI;
       const element = document.createElementNS(namespace, name);
       for (const key in attributes)
         if (key == 'text')
@@ -35,11 +35,10 @@
     document.addEventListener('DOMContentLoaded', async function() {
       const div = document.getElementById('container');
       const response = await fetch('interfaces.json');
-      const interfaces = await response.json();
 
-      for (const { name, path } of interfaces) {
+      for (const { name, path } of await response.json()) {
         const title = element(div, 'div', {
-          'class': 'title', 'text': name
+          'class': 'title', 'text': name ?? path.split('/').pop()
         });
 
         const graph = element(div, 'svg', {
