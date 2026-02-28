@@ -6,15 +6,16 @@
 
   <script type="module">
     function autorange(rtt) {
-      let peak = 0, scale = 1;
+      let floor = 1000, scale = 0.1;
       for (let i = 0; i < 43200; i++)
-        peak = Math.max(peak, rtt[i]);
+        if (0 < rtt[i] && rtt[i] < floor)
+          floor = rtt[i];
       while (true) {
-        if (peak <= scale)
+        if (floor * 5.0 <= scale)
           return [scale, 1, 5];
-        if (peak <= scale * 2)
+        if (floor * 2.5 <= scale)
           return [scale * 2, 2, 2];
-        if (peak <= scale * 5)
+        if (floor <= scale)
           return [scale * 5, 1, 5];
         scale = scale * 10;
       }
@@ -65,7 +66,9 @@
             pdr[i] = txc ? rxc / txc : 1.0;
           }
 
-          const [scale, major, minor] = autorange(max);
+          const [scale, major, minor] = autorange(avg);
+          const plot = x => Math.max(-200, Math.round(-200 * x / scale));
+
           title.textContent = `${title.textContent} / ${scale}ms`;
           element(graph, 'title', { 'text': title.textContent });
 
@@ -96,17 +99,14 @@
 
           element(graph, 'path', {
             'fill': 'none', 'stroke': '#00f3',
-            'd': Array.from(avg, function (_, i) {
-              const y0 = Math.round(-200 * min[i] / scale);
-              const y1 = Math.round(-200 * max[i] / scale);
-              return `M ${-i} ${y0} V ${y1}`;
-            }).join(' ')
+            'd': Array.from(avg, (_, i) =>
+              `M ${-i} ${plot(min[i])} V ${plot(max[i])}`).join(' ')
           });
 
           element(graph, 'polyline', {
             'fill': 'none', 'stroke': '#00f', 'stroke-width': 2,
             'points': Array.from(avg, (x, i) =>
-              `${-i} ${Math.round(-200 * x / scale)}`).join(' ')
+              `${-i} ${plot(x)}`).join(' ')
           });
 
           element(graph, 'path', {
