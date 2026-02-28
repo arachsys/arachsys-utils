@@ -132,7 +132,7 @@ while True:
 
   for fd in ping:
     if ping[fd].rxcount > 0:
-      stats = ping[fd].min, ping[fd].max, ping[fd].sum / ping[fd].rxcount
+      stats = ping[fd].min, ping[fd].sum / ping[fd].rxcount, ping[fd].max
     else:
       stats = 0.0, 0.0, 0.0
     log(ping[fd].target, slot, ping[fd].txcount, ping[fd].rxcount, *stats)
