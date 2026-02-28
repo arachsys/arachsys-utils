@@ -21,7 +21,7 @@
     }
 
     function element(parent, name, attributes) {
-      const namespace = attributes['xmlns'] || parent.namespaceURI;
+      const namespace = attributes['xmlns'] ?? parent.namespaceURI;
       const element = document.createElementNS(namespace, name);
       for (const key in attributes)
         if (key == 'text')
@@ -35,11 +35,10 @@
     document.addEventListener('DOMContentLoaded', async function() {
       const div = document.getElementById('container');
       const response = await fetch('ping.json');
-      const ping = await response.json();
 
-      for (const { name, path } of ping ) {
+      for (const { name, path } of await response.json()) {
         const title = element(div, 'div', {
-          'class': 'title', 'text': name
+          'class': 'title', 'text': name ?? path.split('/').pop()
         });
 
         const graph = element(div, 'svg', {
@@ -58,8 +57,8 @@
           let pdr = new Float32Array(43200);
 
           for (let i = 0, t = now; i < 43200; i++, t--) {
-            const txc = view.getUint8(4 + t % 43200 * 8, true);
-            const rxc = view.getUint8(5 + t % 43200 * 8, true);
+            const txc = view.getUint8(4 + t % 43200 * 8);
+            const rxc = view.getUint8(5 + t % 43200 * 8);
             min[i] = view.getFloat16(6 + t % 43200 * 8, true) * 1e3;
             avg[i] = view.getFloat16(8 + t % 43200 * 8, true) * 1e3;
             max[i] = view.getFloat16(10 + t % 43200 * 8, true) * 1e3;
