@@ -87,8 +87,11 @@ run() {
     ip address add fe80::1/64 dev guest-$1
     add $1 "${@:4}"
 
-    unshare -S $ID -G $ID hypervisor --cpus boot=$3 --memory size=${2}M \
-      --disk "path=/dev/$HOSTNAME/$1" --net "tap=guest-$1,mac=$MAC" \
+    unshare -S $ID -G $ID hypervisor \
+      --cpus boot=$3,nested=on \
+      --memory size=${2}M,hugepages=on \
+      --disk "path=/dev/$HOSTNAME/$1,direct=on" \
+      --net "tap=guest-$1,mac=$MAC" \
       --kernel "$(cd "${0%/*}/../lib/guest" && echo "$PWD/linux")" \
       --cmdline "quiet root=/dev/vda"
 
