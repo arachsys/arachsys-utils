@@ -4,11 +4,11 @@ CFLAGS := -O2 -Wall
 %:: %.c Makefile
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(filter %.c,$^)
 
-all: dns-sync guest monitor ifstatd wifiguard
+all: dns-sync guest health monitor ifstatd wifiguard
 
 install: all
 	mkdir -p $(DESTDIR)$(BINDIR)
-	install dns-sync guest monitor wifiguard $(DESTDIR)$(BINDIR)
+	install dns-sync guest health monitor wifiguard $(DESTDIR)$(BINDIR)
 	install -s ifstatd $(DESTDIR)$(BINDIR)
 
 clean:
