@@ -50,6 +50,16 @@ check() {
       echo "/dev/$VG/$LV $STATUS"
     fi
   done
+
+  birdc show protocols 2>/dev/null | while read -r NAME PROTO _ STATE _; do
+    if [[ $PROTO == BGP ]] && [[ $STATE != up ]]; then
+      echo "bgp $NAME down"
+    fi
+  done
+
+  if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    echo "bird not running"
+  fi
 }
 
 if wait; then
