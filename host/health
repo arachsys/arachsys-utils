@@ -1,0 +1,67 @@
+#!/bin/bash
+
+shopt -s extglob nullglob
+
+alert() {
+  curl -s -T - --mail-from=hostmaster@arachsys.com \
+    --mail-rcpt=hostmaster@arachsys.com smtp://mx.arachsys.com:587 <<EOF
+From: Monitoring <hostmaster@arachsys.com>
+To: hostmaster@arachsys.com
+Subject: Host health for $HOSTNAME
+
+$(< /dev/stdin)
+EOF
+}
+
+check() {
+  ipmitool -c sdr type 'Power Supply' | while IFS=, read -r ID _ STATE _; do
+    if [[ $STATE == @(na|ns|ok) ]]; then
+      continue
+    elif ID=${ID,,} && [[ $ID == psu+([0-9])\ status ]]; then
+      echo "${ID%% *} failed"
+    elif [[ $ID == psu+([0-9])\ ac\ lost ]]; then
+      echo "${ID%% *} lost power"
+    fi
+  done
+
+  ipmitool -c sdr type 'Temperature' | while IFS=, read -r _ _ _ STATE; do
+    if [[ $STATE != @(na|ns|ok) ]]; then
+      echo "temperature high"
+      break
+    fi
+  done
+
+  for DRIVE in /dev/nvme+([0-9]) /dev/sd+([a-z]); do
+    smartctl -q silent -A -H "$DRIVE"
+    let STATUS=$?
+
+    if (( STATUS & 7 )); then
+      echo "$DRIVE missing or failed"
+    elif (( STATUS & 8 )); then
+      echo "$DRIVE health failing"
+    elif (( STATUS & 16 )); then
+      echo "$DRIVE past threshold"
+    fi
+  done
+
+  lvm lvs -o vgname,lvname,lv_health_status --headings none \
+      --reportformat basic | while read -r VG LV STATUS; do
+    if [[ -n $STATUS ]]; then
+      echo "/dev/$VG/$LV $STATUS"
+    fi
+  done
+}
+
+if wait; then
+  set -- "$STATE"
+  trap 'STATE="$1" exec "$0"' HUP
+  trap 'STATE=USR1 exec "$0"' USR1
+
+  while true; do
+    set -- "$(check)" "$1"
+    if [[ $1 != $2 ]]; then
+      alert <<< "${1:-all checks clear}"
+    fi
+    read -t $((3600 - EPOCHSECONDS % 3600))
+  done
+fi <><(:)
