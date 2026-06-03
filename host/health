@@ -51,6 +51,12 @@ check() {
     fi
   done
 
+  df --output target,size,used / | while read -r TARGET SIZE USED; do
+    if [[ $TARGET == / ]] && (( 4 * SIZE < 5 * USED )); then
+      echo "rootfs $((100 * USED / SIZE))% full"
+    fi
+  done
+
   birdc show protocols 2>/dev/null | while read -r NAME PROTO _ STATE _; do
     if [[ $PROTO == BGP ]] && [[ $STATE != up ]]; then
       echo "bgp $NAME down"
