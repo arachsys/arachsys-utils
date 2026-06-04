@@ -26,8 +26,8 @@ trap 'exec "$0" "$1"' HUP
 while true; do
   for HOST in "${!HOSTS[@]}"; do
     if TMP=$(mktemp /tmp/microdns.XXXXXX); then
-      if timeout 10 ssh -i "$1/id" -n "root@$HOST" \
-           cat "${HOSTS[$HOST]}" >"$TMP" 2>/dev/null; then
+      if timeout 10 ssh -i "$1/id" -n -o "UserKnownHostsFile ${1@Q}/hosts" \
+           -F none "$HOST" cat "${HOSTS[$HOST]}" >"$TMP" 2>/dev/null; then
         if ! cmp -s "$1/data.${HOST%%.*}" "$TMP"; then
           mv -f "$TMP" "$1/data.${HOST%%.*}"
           echo "Replaced $1/data.${HOST%%.*}"
