@@ -87,8 +87,16 @@ run() {
     ip address add fe80::1/64 dev guest-$1
     add $1 "${@:4}"
 
+    local DISK=/dev/$HOSTNAME/$1 SYSFS
+    if SYSFS=/sys/dev/block/$(stat -c '%Hr:%Lr' -L "$DISK") \
+        && (( $(< $SYSFS/queue/discard_max_bytes) )); then
+      DISK="path=$DISK,direct=on,sparse=on"
+    else
+      DISK="path=$DISK,direct=on,sparse=off"
+    fi 2>/dev/null
+
     unshare -S $ID -G $ID hypervisor --cpus boot=$3 --memory size=${2}M \
-      --disk "path=/dev/$HOSTNAME/$1" --net "tap=guest-$1,mac=$MAC" \
+      --disk "$DISK" --net "tap=guest-$1,mac=$MAC" \
       --kernel "$(cd "${0%/*}/../lib/guest" && echo "$PWD/linux")" \
       --cmdline "quiet root=/dev/vda"
 
@@ -133,9 +141,17 @@ start() {
   ip address add fe80::1/64 dev guest-$1
   add $1 "${@:4}"
 
+  local DISK=/dev/$HOSTNAME/$1 SYSFS
+  if SYSFS=/sys/dev/block/$(stat -c '%Hr:%Lr' -L "$DISK") \
+      && (( $(< $SYSFS/queue/discard_max_bytes) )); then
+    DISK="path=$DISK,direct=on,sparse=on"
+  else
+    DISK="path=$DISK,direct=on,sparse=off"
+  fi 2>/dev/null
+
   daemon -l /var/log/guest/$1 -p /run/guest/$1.pid -u $ID:$ID \
     hypervisor --cpus boot=$3 --memory size=${2}M \
-      --disk "path=/dev/$HOSTNAME/$1" --net "tap=guest-$1,mac=$MAC" \
+      --disk "$DISK" --net "tap=guest-$1,mac=$MAC" \
       --kernel "$(cd "${0%/*}/../lib/guest" && echo "$PWD/linux")" \
       --cmdline "quiet root=/dev/vda"
 
