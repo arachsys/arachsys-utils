@@ -1,0 +1,70 @@
+#!/bin/python
+
+import functools, math, os, secrets, sys
+
+letters = list('abcdefghijklmnopqrstuvwxyz')
+digits = list('0123456789')
+vowels = list('aeiou')
+
+consonants = [ c for c in letters if c not in vowels ]
+clusters = { c + 'y' for c in consonants if c not in 'qy' } | {
+  'bl', 'br', 'ch', 'cl', 'cr', 'dr', 'dw', 'fl', 'fr', 'gl', 'gn', 'gr',
+  'kn', 'ph', 'pl', 'pr', 'sc', 'sh', 'sk', 'sl', 'sm', 'sn', 'sp', 'st',
+  'sw', 'th', 'tr', 'tw', 'wh', 'wr'
+}
+
+@functools.cache
+def count(free, last, repeat, length):
+  return 1 if free < 1 else sum(count(free - 1, *state)
+    for _, *state in moves(last, repeat, length))
+
+def moves(last, repeat, length, small = 3):
+  if length >= small:
+    for next in digits:
+      yield next, next, False, 0
+  else:
+    length += 1
+  if last in consonants:
+    for next in consonants:
+      if not repeat and last + next in clusters:
+        yield next, next, True, length
+    for next in vowels:
+      yield next, next, False, length
+  elif last in vowels:
+    if not repeat:
+      for next in vowels:
+        yield next, next, True, length
+    for next in consonants:
+      yield next, next, False, length
+  else:
+    for next in letters:
+      yield next.upper(), next, False, length
+      yield next, next, False, length
+
+def password(length, random = secrets.randbelow):
+  choice = random(count(length, None, False, 0))
+  result, *state = '', None, False, 0
+  while free := length - len(result):
+    for next, *state in moves(*state):
+      if choice < count(free - 1, *state):
+        result += next
+        break
+      choice -= count(free - 1, *state)
+  return result
+
+try:
+  length, repeat = 12, 1
+  if len(sys.argv) > 1:
+    length = max(0, int(sys.argv[1]))
+  if len(sys.argv) > 2:
+    repeat = max(0, int(sys.argv[2]))
+  elif sys.stdout.isatty():
+    repeat = 8
+except Exception:
+  print(f'Usage: {os.path.basename(sys.argv[0])} [LENGTH [COUNT]]',
+    file = sys.stderr)
+  sys.exit(64)
+
+entropy = math.log2(count(length, None, False, 0))
+for _ in range(repeat):
+  print(f'{password(length)}  {entropy:0.1f} bits')
