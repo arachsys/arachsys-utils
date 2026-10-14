@@ -57,8 +57,9 @@ check() {
     fi
   done
 
-  birdc show protocols 2>/dev/null | while read -r NAME PROTO _ STATE _; do
-    if [[ $PROTO == BGP ]] && [[ $STATE != up ]]; then
+  birdc show protocols 2>/dev/null \
+      | while read -r NAME PROTO _ STATE _ INFO; do
+    if [[ $PROTO == BGP && $STATE != up && $INFO != Passive ]]; then
       echo "bgp $NAME down"
     fi
   done
