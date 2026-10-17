@@ -150,7 +150,7 @@ start() {
   fi 2>/dev/null
 
   daemon -l /var/log/guest/$1 -p /run/guest/$1.pid -u $ID:$ID \
-    hypervisor --cpus boot=$3 --memory size=${2}M \
+    hypervisor --cpus boot=$3,nested=on --memory size=${2}M \
       --disk "$DISK" --net "tap=guest-$1,mac=$MAC" \
       --kernel "$(cd "${0%/*}/../lib/guest" && echo "$PWD/linux")" \
       --cmdline "quiet root=/dev/vda"
